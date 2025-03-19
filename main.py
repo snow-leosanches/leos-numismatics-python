@@ -1,18 +1,18 @@
-from decouple import config
-from dotenv import load_dotenv
+
 from typing import Union
 import logging
 
 from fastapi import FastAPI
-
-# Option 1
-# from snowplow_tracker import Snowplow, EmitterConfiguration, Subject, TrackerConfiguration
-# Option 2
-from snowplow_tracker import Tracker, Emitter, AsyncEmitter, Subject, PageView
+from faker import Faker
 
 import logging
 import contextlib
 from http.client import HTTPConnection
+
+from snowplow_tracker import PageView, SelfDescribing, SelfDescribingJson
+from dependencies.snowplow_tracker import tracker
+
+fake = Faker()
 
 def debug_requests_on():
     '''Switches on logging of the requests module.'''
@@ -35,6 +35,7 @@ def debug_requests_off():
     requests_log.setLevel(logging.WARNING)
     requests_log.propagate = False
 
+
 @contextlib.contextmanager
 def debug_requests():
     '''Use with 'with'!'''
@@ -47,31 +48,7 @@ logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
-load_dotenv()
 app = FastAPI()
-
-SNOWPLOW_COLLECTOR_URI = config('SNOWPLOW_COLLECTOR_URI')
-SNOWPLOW_COLLECTOR_PROTOCOL = config('SNOWPLOW_COLLECTOR_PROTOCOL', default='https')
-SNOWPLOW_COLLECTOR_PORT = config('SNOWPLOW_COLLECTOR_PORT', default=80, cast=int)
-
-# Option 1
-'''Snowplow.create_tracker(namespace='leos-numismatics-python', endpoint='localhost:9090')
-tracker = Snowplow.get_tracker('ns')
-
-tracker.track_page_view('https://leo-numismatics.com', 'example page', 'example title')'''
-# Option 2
-# emitter = Emitter(endpoint=SNOWPLOW_COLLECTOR_URI, protocol=SNOWPLOW_COLLECTOR_PROTOCOL, port=SNOWPLOW_COLLECTOR_PORT)
-emitter = AsyncEmitter(
-    endpoint=SNOWPLOW_COLLECTOR_URI, 
-    protocol=SNOWPLOW_COLLECTOR_PROTOCOL, 
-    port=SNOWPLOW_COLLECTOR_PORT,
-    on_success=lambda payloads: logger.info(payloads),
-    on_failure=lambda errorCode, payloads: logger.error(f"Failure: {errorCode}, {payloads}")
-)
-tracker = Tracker(
-    namespace="leos-numismatics-python", 
-    app_id="leos-numismatics-python",
-    emitters=emitter)
 
 # debug_requests_on() # If necessary to debug the requests, enable it.
 
@@ -91,4 +68,23 @@ def read_root():
     return {
         "Hello": "World",
         "page_view_result": page_view_result
+    }
+
+@app.get("/self-describing")
+def read_page():
+    url = fake.uri()
+    self_describing = SelfDescribing(
+        SelfDescribingJson(
+            "iglu:com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0",
+            {
+                "targetUrl": url
+            },
+        ),
+    )
+
+    tracker.track(self_describing)
+    tracker.flush(False)
+
+    return {
+        "url": url
     }

@@ -1,3 +1,4 @@
+Faker
 fastapi[standard]
 python-decouple
 python-dotenv
